@@ -15,7 +15,7 @@ library(CohortMethod)
 # library(Cyclops)
 
 
-cohortMethodData <- CohortMethod::loadCohortMethodData("cohortMethodData_t1788868_c1788867_o1788866.zip")
+cohortMethodData <- CohortMethod::loadCohortMethodData("results/cohortMethodData_t1788868_c1788867_o1788866.zip")
 
 # For the LEGEND-HTN study, we pick target exposure thiazdes (atlas id 1788868), 
 # comparator exposure ACEi (atlas id 1788867), and outcome  AMI (atlas id 1788866). 
@@ -23,22 +23,22 @@ cohortMethodData <- CohortMethod::loadCohortMethodData("cohortMethodData_t178886
 studyPop <- CohortMethod::createStudyPopulation(
   cohortMethodData = cohortMethodData, 
   outcomeId = 1788866, # AMI
-  firstExposureOnly = FALSE,
-  restrictToCommonPeriod = FALSE, 
+  firstExposureOnly = TRUE,
+  restrictToCommonPeriod = TRUE, 
   washoutPeriod = 0, 
-  removeDuplicateSubjects = "keep all", 
-  removeSubjectsWithPriorOutcome = FALSE, 
+  removeDuplicateSubjects = "keep first", 
+  removeSubjectsWithPriorOutcome = TRUE, 
   minDaysAtRisk = 1,
   riskWindowStart = 0,
   startAnchor = "cohort start",
-  riskWindowEnd = 30,
+  riskWindowEnd = 99999,
   endAnchor = "cohort end"
 )
 
 
 # create propensity model
 ps <- createPs(cohortMethodData = cohortMethodData, population = studyPop)
-saveRDS(ps, "ps_study.rds")
+saveRDS(ps, "results/ps_study.rds")
 
 # outcome model
 # ps = readRDS("ps_study.rds") # pick up where you left off if you need

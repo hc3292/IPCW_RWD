@@ -24,7 +24,7 @@ library(CohortMethod)
 ################################################################################
 
 connectionDetails <- createConnectionDetails(dbms="sql server",
-                                             server="")
+                                             server="dbmi-omop.mc.cumc.columbia.edu")
 
 conn <- DatabaseConnector::connect(connectionDetails)
 
@@ -109,12 +109,11 @@ cohortMethodData <- CohortMethod::getDbCohortMethodData(
   exposureTable = targetCohortTable,
   outcomeDatabaseSchema = targetDatabaseSchema,
   outcomeTable = targetCohortTable,
-  firstExposureOnly = TRUE,
-  restrictToCommonPeriod = FALSE,
-  removeDuplicateSubjects = "remove all",
+  studyStartDate = '20000101',
+  studyEndDate = '20241231',
   covariateSettings = covariateSettings
 )
-CohortMethod::saveCohortMethodData(cohortMethodData, "cohortMethodData_t1788868_c1788867_o1788866.zip")
+CohortMethod::saveCohortMethodData(cohortMethodData, "results/cohortMethodData_t1788868_c1788867_o1788866.zip")
 
 
 # the below does covariate settings including ALL covariate
@@ -122,6 +121,7 @@ CohortMethod::saveCohortMethodData(cohortMethodData, "cohortMethodData_t1788868_
 # but for IPCW, we want them all
 
 covariateSettings <- FeatureExtraction::createDefaultCovariateSettings()
+
 cohortMethodData_allcovar <- CohortMethod::getDbCohortMethodData(
   connectionDetails = connectionDetails, 
   cdmDatabaseSchema = cdmDatabaseSchema,
@@ -133,9 +133,9 @@ cohortMethodData_allcovar <- CohortMethod::getDbCohortMethodData(
   exposureTable = targetCohortTable,
   outcomeDatabaseSchema = targetDatabaseSchema,
   outcomeTable = targetCohortTable,
-  firstExposureOnly = TRUE,
-  restrictToCommonPeriod = FALSE,
-  removeDuplicateSubjects = "remove all",
+  studyStartDate = '20000101',
+  studyEndDate = '20241231',
   covariateSettings = covariateSettings
 )
-CohortMethod::saveCohortMethodData(cohortMethodData_allcovar, "cohortMethodData_t1788868_c1788867_o1788866_allcovar.zip")
+
+CohortMethod::saveCohortMethodData(cohortMethodData_allcovar, "results/cohortMethodData_t1788868_c1788867_o1788866_allcovar.zip")
