@@ -27,7 +27,7 @@ library(progress)
 
 # Bootstrap parameters
 B <- 10                    # Number of bootstrap iterations
-m <- 10000                    # Bootstrap sample size (NULL = use full sample size n)
+m <- 47239                    # Bootstrap sample size (NULL = use full sample size n)
 alpha <- 0.05                # For confidence intervals (1-alpha)*100%
 
 # Data file paths
@@ -35,7 +35,7 @@ cohortMethodData_file <- "results/cohortMethodData_t1788868_c1788867_o1788866.zi
 cohortMethodData_allcovar_file <- "results/cohortMethodData_t1788868_c1788867_o1788866_allcovar.zip"
 
 # Output directory for bootstrap results
-output_dir <- "bootstrap_results"
+output_dir <- "bootstrap_results_replace"
 if (!dir.exists(output_dir)) dir.create(output_dir)
 
 # Temporary file names (will be suffixed with bootstrap iteration)
@@ -121,7 +121,8 @@ runBootstrapIteration <- function(b, studyPop, cohortMethodData,
   
   ps_boot <- createPs(
     cohortMethodData = cohortMethodData_boot,
-    population = population_boot
+    population = population_boot,
+    prior = createPrior("laplace", exclude = c(0), useCrossValidation = FALSE)
   )
   
   #### STOP HERE ### next we fit bootstrap censoring models
@@ -219,7 +220,7 @@ runBootstrapIteration <- function(b, studyPop, cohortMethodData,
   
   lassoPrior <- Cyclops::createPrior(
     priorType = "laplace",
-    useCrossValidation = TRUE
+    useCrossValidation = FALSE
   )
   
   Cox_censoring_boot <- fitCyclopsModel(

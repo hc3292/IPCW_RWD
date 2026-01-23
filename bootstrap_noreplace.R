@@ -25,10 +25,10 @@ library(progress)
 # Configuration
 ################################################################################
 
-set.seed(15890)
+set.seed(15895)
 
 # Bootstrap parameters
-B <- 3                    # Number of bootstrap iterations
+B <- 5                    # Number of bootstrap iterations
 m <- 10000                    # Bootstrap sample size (NULL = use full sample size n)
 alpha <- 0.05                # For confidence intervals (1-alpha)*100%
 
@@ -127,7 +127,8 @@ runBootstrapIteration <- function(b, studyPop, cohortMethodData,
   
   ps_boot <- createPs(
     cohortMethodData = cohortMethodData_boot,
-    population = population_boot
+    population = population_boot,
+    prior = createPrior("laplace", exclude = c(0), useCrossValidation = FALSE)
   )
   
   #### STOP HERE ### next we fit bootstrap censoring models
@@ -225,7 +226,7 @@ runBootstrapIteration <- function(b, studyPop, cohortMethodData,
   
   lassoPrior <- Cyclops::createPrior(
     priorType = "laplace",
-    useCrossValidation = TRUE
+    useCrossValidation = FALSE
   )
   
   Cox_censoring_boot <- fitCyclopsModel(
