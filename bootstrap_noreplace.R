@@ -25,10 +25,10 @@ library(progress)
 # Configuration
 ################################################################################
 
-set.seed(15895)
+MASTER_SEED <- 20260123
 
 # Bootstrap parameters
-B <- 5                    # Number of bootstrap iterations
+B <- 25                    # Number of bootstrap iterations
 m <- 10000                    # Bootstrap sample size (NULL = use full sample size n)
 alpha <- 0.05                # For confidence intervals (1-alpha)*100%
 
@@ -60,10 +60,15 @@ temp_weights_file <- "survival_weights_boot.csv"
 runBootstrapIteration <- function(b, studyPop, cohortMethodData, 
                                   cohortMethodData_allcovar, m) {
   
+  set.seed(MASTER_SEED + b)
+  
   # Sample m out of n WITHOUT replacement
   boot_idx <- sample(seq_len(nrow(studyPop)), size = m, replace = FALSE)
   boot_studyPop <- studyPop[boot_idx, ]
   boot_oldRowIds <- studyPop$rowId[boot_idx]
+  
+  cat("Iteration", b, "hash:", digest::digest(boot_oldRowIds), "\n")
+  print(table(boot_studyPop$treatment))
   
   # Map each bootstrap draw to a NEW unique rowId
   # Since we're sampling without replacement, each oldRowId appears exactly once
@@ -128,7 +133,8 @@ runBootstrapIteration <- function(b, studyPop, cohortMethodData,
   ps_boot <- createPs(
     cohortMethodData = cohortMethodData_boot,
     population = population_boot,
-    prior = createPrior("laplace", exclude = c(0), useCrossValidation = FALSE)
+    prior = createPrior("laplace", exclude = c(0), useCrossValidation = TRUE),
+    control = createControl(threads = 8, fold = 5)
   )
   
   #### STOP HERE ### next we fit bootstrap censoring models
@@ -226,13 +232,16 @@ runBootstrapIteration <- function(b, studyPop, cohortMethodData,
   
   lassoPrior <- Cyclops::createPrior(
     priorType = "laplace",
-    useCrossValidation = FALSE
+    useCrossValidation = TRUE
   )
   
   Cox_censoring_boot <- fitCyclopsModel(
     censored_df,
-    prior = lassoPrior
+    prior = lassoPrior,
+    control = createControl(threads = 8, fold = 5)
   )
+  
+  cat("Cox censoring model is fit!")
   
   #----------------------------
   # 6) Compute IPCW weights (from find_kZ_script.R)
@@ -521,6 +530,29 @@ for (b in 1:B) {
   }
   
   pb$tick()
+  
+  cohortMethodData <- loadCohortMethodData(cohortMethodData_file)
+  cohortMethodData_allcovar <- loadCohortMethodData(cohortMethodData_allcovar_file)
+  
+  # Create study pop ONCE (this is what we will sample from)
+  cat("Creating study population...\n")
+  studyPop <- CohortMethod::createStudyPopulation(
+    cohortMethodData = cohortMethodData, 
+    outcomeId = 1788866, # AMI
+    firstExposureOnly = TRUE,
+    washoutPeriod = 0,
+    removeDuplicateSubjects = "keep first",
+    censorAtNewRiskWindow = TRUE,
+    removeSubjectsWithPriorOutcome = TRUE,
+    priorOutcomeLookback = 99999,
+    minDaysAtRisk = 1,
+    maxDaysAtRisk = 99999,
+    riskWindowStart = 0,
+    startAnchor = "cohort start",
+    riskWindowEnd = 99999,
+    endAnchor = "cohort end"
+  )
+  
   
   tryCatch({
     results <- runBootstrapIteration(b, studyPop, cohortMethodData, 

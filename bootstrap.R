@@ -25,6 +25,8 @@ library(progress)
 # Configuration
 ################################################################################
 
+MASTER_SEED <- 20260123
+
 # Bootstrap parameters
 B <- 10                    # Number of bootstrap iterations
 m <- 47239                    # Bootstrap sample size (NULL = use full sample size n)
@@ -58,10 +60,21 @@ temp_weights_file <- "survival_weights_boot.csv"
 runBootstrapIteration <- function(b, studyPop, cohortMethodData, 
                                   cohortMethodData_allcovar, m) {
   
+  set.seed(MASTER_SEED + b)
+  
   # Sample m out of n with replacement
+  cat("Before sample head seed:", paste(head(.Random.seed, 5), collapse=","), "\n")
   boot_idx <- sample(seq_len(nrow(studyPop)), size = m, replace = TRUE)
+  cat("After sample head seed :", paste(head(.Random.seed, 5), collapse=","), "\n")
+  
+  
   boot_studyPop <- studyPop[boot_idx, ]
   boot_oldRowIds <- studyPop$rowId[boot_idx]
+  
+  
+  cat("Iteration", b, "hash:", digest::digest(boot_oldRowIds), "\n")
+  print(table(boot_studyPop$treatment))
+  
   
   # Map each bootstrap draw to a NEW unique rowId
   boot_map <- tibble(
@@ -119,11 +132,16 @@ runBootstrapIteration <- function(b, studyPop, cohortMethodData,
   # Ensure CohortMethodData class is preserved
   class(cohortMethodData_boot) <- class(cohortMethodData)
   
+ 
   ps_boot <- createPs(
     cohortMethodData = cohortMethodData_boot,
     population = population_boot,
-    prior = createPrior("laplace", exclude = c(0), useCrossValidation = FALSE)
+    prior = createPrior("laplace", exclude = c(0), useCrossValidation = FALSE),
+    control = createControl(threads = 8)
   )
+  
+  cat("After createPs head seed:", paste(head(.Random.seed, 5), collapse=","), "\n")
+  
   
   #### STOP HERE ### next we fit bootstrap censoring models
   # Note: cohortMethodData_allcovar is passed as parameter, no need to reload
@@ -225,8 +243,11 @@ runBootstrapIteration <- function(b, studyPop, cohortMethodData,
   
   Cox_censoring_boot <- fitCyclopsModel(
     censored_df,
-    prior = lassoPrior
+    prior = lassoPrior,
+    control = createControl(threads = 8)
   )
+  
+  cat("Cox censoring model fitted")
   
   #----------------------------
   # 6) Compute IPCW weights (from find_kZ_script.R)
@@ -254,8 +275,10 @@ runBootstrapIteration <- function(b, studyPop, cohortMethodData,
       iptw = iptw
     )
   
+  
   # Extract non-zero covariates from censoring model
   coefs <- coef(Cox_censoring_boot)
+  coefs <- coefs[!names(coefs) %in% c("(Intercept)", "Intercept", "0")] # drop intercept
   non_zero_coefs <- coefs[coefs != 0]
   
   # Filter to non-zero covariates only
@@ -396,8 +419,11 @@ runBootstrapIteration <- function(b, studyPop, cohortMethodData,
   
   # Unadjusted
   tryCatch({
-    fit_unadjusted <- coxph(Surv(time, ami) ~ treatment, 
-                            data = outcomes_df)
+    pop_u <- population_boot %>%
+      mutate(ami = as.integer(outcomeCount > 0))
+    
+    fit_unadjusted <- coxph(Surv(survivalTime, ami) ~ treatment, data = pop_u)
+    
     results$unadjusted_coef <- coef(fit_unadjusted)
   }, error = function(e) {
     results$unadjusted_coef <- NA
@@ -416,7 +442,7 @@ runBootstrapIteration <- function(b, studyPop, cohortMethodData,
   # IPTW truncated
   tryCatch({
     fit_iptw_trunc <- coxph(Surv(time, ami) ~ treatment, 
-                            data = outcomes_df, weights = iptw)
+                            data = outcomes_df, weights = iptw_trunc)
     results$iptw_trunc_coef <- coef(fit_iptw_trunc)
   }, error = function(e) {
     results$iptw_trunc_coef <- NA
