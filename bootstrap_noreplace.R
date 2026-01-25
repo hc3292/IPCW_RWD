@@ -28,7 +28,7 @@ library(progress)
 MASTER_SEED <- 20260123
 
 # Bootstrap parameters
-B <- 25                    # Number of bootstrap iterations
+B <- 100                    # Number of bootstrap iterations
 m <- 10000                    # Bootstrap sample size (NULL = use full sample size n)
 alpha <- 0.05                # For confidence intervals (1-alpha)*100%
 

@@ -24,7 +24,7 @@
 ### 1) load cohort method data
 
 # important: use the "all covar" version
-cohortMethodData <- CohortMethod::loadCohortMethodData("cohortMethodData_t1788868_c1788867_o1788866_allcovar.zip")
+cohortMethodData <- CohortMethod::loadCohortMethodData("results/cohortMethodData_t1788868_c1788867_o1788866_allcovar.zip")
 
 ### 2) build the censored_cohort table 
 
@@ -87,7 +87,8 @@ lassoPrior <- Cyclops::createPrior(
 )
 
 Cox_censoring <- fitCyclopsModel(censored_df,
-                                 prior = lassoPrior)
+                                 prior = lassoPrior,
+                                 control = createControl(threads = 8))
 
-saveRDS(Cox_censoring, "Cox_censoring.rds")
+saveRDS(Cox_censoring, "results/Cox_censoring.rds")
 
