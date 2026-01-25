@@ -9,6 +9,8 @@
 # 2. censoring_vars_legend_script.R - Fits Cox censoring model
 # 3. find_kZ_script.R - Computes IPCW weights
 # 4. weights_script.R - Combines weights and fits final models
+#
+# Also computes bootstrap-based RMST and survival curve confidence intervals
 ################################################################################
 
 library(DatabaseConnector)
@@ -20,6 +22,7 @@ library(data.table)
 library(survival)
 library(Cyclops)
 library(progress)
+library(digest)  # For hash computation
 
 ################################################################################
 # Configuration
@@ -31,6 +34,10 @@ MASTER_SEED <- 20260123
 B <- 100                    # Number of bootstrap iterations
 m <- 10000                    # Bootstrap sample size (NULL = use full sample size n)
 alpha <- 0.05                # For confidence intervals (1-alpha)*100%
+
+# RMST and survival curve parameters
+tau <- 2500                  # Restriction time for RMST (days)
+time_grid <- seq(0, tau, by = 60)  # Time points for survival curves (every 60 days up to tau)
 
 # Data file paths
 cohortMethodData_file <- "results/cohortMethodData_t1788868_c1788867_o1788866.zip"
@@ -49,6 +56,87 @@ temp_weights_file <- "survival_weights_boot.csv"
 ################################################################################
 # Helper Functions
 ################################################################################
+
+#' Compute RMST from survfit object
+#' @param survfit_obj survfit object with two treatment groups
+#' @param tau Restriction time
+#' @return List with RMST for each group and difference
+compute_rmst_from_survfit <- function(survfit_obj, tau) {
+  tryCatch({
+    # Extract summary with full time grid
+    surv_summary <- summary(survfit_obj, extend = TRUE)
+    
+    # Identify strata labels
+    strata_names <- unique(surv_summary$strata)
+    if (length(strata_names) != 2) {
+      return(list(rmst0 = NA, rmst1 = NA, rmst_diff = NA))
+    }
+    
+    # Helper: extract time and survival for one stratum
+    extract_group_data <- function(group_label) {
+      idx <- which(surv_summary$strata == group_label)
+      time <- surv_summary$time[idx]
+      surv <- surv_summary$surv[idx]
+      return(list(time = time, surv = surv))
+    }
+    
+    # Compute RMST manually
+    compute_rmst <- function(time, surv, tau) {
+      idx <- which(time <= tau)
+      if (length(idx) == 0) {
+        return(0)  # No events before tau
+      }
+      time_trunc <- c(0, time[idx], tau)
+      surv_trunc <- c(1, surv[idx], surv[max(idx)])
+      sum(diff(time_trunc) * head(surv_trunc, -1))
+    }
+    
+    # Extract and compute RMST for both groups
+    group0 <- extract_group_data("treatment=0")
+    group1 <- extract_group_data("treatment=1")
+    
+    rmst0 <- compute_rmst(group0$time, group0$surv, tau)
+    rmst1 <- compute_rmst(group1$time, group1$surv, tau)
+    
+    return(list(rmst0 = rmst0, rmst1 = rmst1, rmst_diff = rmst1 - rmst0))
+  }, error = function(e) {
+    return(list(rmst0 = NA, rmst1 = NA, rmst_diff = NA))
+  })
+}
+
+#' Extract survival curve at specific time points
+#' @param survfit_obj survfit object
+#' @param time_points Vector of time points to extract
+#' @return Data frame with time, survival for treatment=0, survival for treatment=1
+extract_survival_curve <- function(survfit_obj, time_points) {
+  tryCatch({
+    surv_summary <- summary(survfit_obj, times = time_points, extend = TRUE)
+    
+    # Identify strata
+    strata_names <- unique(surv_summary$strata)
+    if (length(strata_names) != 2) {
+      return(data.frame(time = time_points, surv0 = NA, surv1 = NA))
+    }
+    
+    # Extract survival for each treatment group
+    extract_group_surv <- function(group_label) {
+      idx <- which(surv_summary$strata == group_label)
+      time <- surv_summary$time[idx]
+      surv <- surv_summary$surv[idx]
+      # Interpolate/extend to match time_points
+      surv_interp <- approx(time, surv, xout = time_points, method = "constant", 
+                           yleft = 1, yright = tail(surv, 1), rule = 2)$y
+      return(surv_interp)
+    }
+    
+    surv0 <- extract_group_surv("treatment=0")
+    surv1 <- extract_group_surv("treatment=1")
+    
+    return(data.frame(time = time_points, surv0 = surv0, surv1 = surv1))
+  }, error = function(e) {
+    return(data.frame(time = time_points, surv0 = NA, surv1 = NA))
+  })
+}
 
 #' Run single bootstrap iteration
 #' @param b Bootstrap iteration number
@@ -445,6 +533,72 @@ runBootstrapIteration <- function(b, studyPop, cohortMethodData,
     results$combined_coef <- NA
   })
   
+  #----------------------------
+  # 9) Compute survival curves and RMST for each model
+  #----------------------------
+  
+  # Helper function to compute survfit and extract results
+  compute_survival_rmst <- function(data, weight_var = NULL, model_name) {
+    tryCatch({
+      # Fit survfit
+      if (is.null(weight_var)) {
+        survfit_obj <- survfit(Surv(Tstart, time, ami) ~ treatment, 
+                               data = data, id = rowId)
+      } else {
+        survfit_obj <- survfit(Surv(Tstart, time, ami) ~ treatment, 
+                              data = data, id = rowId, weights = data[[weight_var]])
+      }
+      
+      # Extract survival curve at time grid
+      surv_curve <- extract_survival_curve(survfit_obj, time_grid)
+      
+      # Compute RMST
+      rmst_results <- compute_rmst_from_survfit(survfit_obj, tau)
+      
+      return(list(
+        surv_curve = surv_curve,
+        rmst0 = rmst_results$rmst0,
+        rmst1 = rmst_results$rmst1,
+        rmst_diff = rmst_results$rmst_diff
+      ))
+    }, error = function(e) {
+      return(list(
+        surv_curve = data.frame(time = time_grid, surv0 = NA, surv1 = NA),
+        rmst0 = NA,
+        rmst1 = NA,
+        rmst_diff = NA
+      ))
+    })
+  }
+  
+  # Unadjusted
+  unadj_results <- compute_survival_rmst(outcomes_df.long, weight_var = NULL, "unadjusted")
+  results$unadjusted_rmst0 <- unadj_results$rmst0
+  results$unadjusted_rmst1 <- unadj_results$rmst1
+  results$unadjusted_rmst_diff <- unadj_results$rmst_diff
+  results$unadjusted_surv_curve <- unadj_results$surv_curve
+  
+  # IPTW truncated
+  iptw_results <- compute_survival_rmst(outcomes_df.long, weight_var = "iptw_trunc", "iptw")
+  results$iptw_rmst0 <- iptw_results$rmst0
+  results$iptw_rmst1 <- iptw_results$rmst1
+  results$iptw_rmst_diff <- iptw_results$rmst_diff
+  results$iptw_surv_curve <- iptw_results$surv_curve
+  
+  # IPCW stabilized truncated
+  ipcw_results <- compute_survival_rmst(outcomes_df.long, weight_var = "Stab_ipcw_trunc", "ipcw")
+  results$ipcw_rmst0 <- ipcw_results$rmst0
+  results$ipcw_rmst1 <- ipcw_results$rmst1
+  results$ipcw_rmst_diff <- ipcw_results$rmst_diff
+  results$ipcw_surv_curve <- ipcw_results$surv_curve
+  
+  # Combined weights
+  comb_results <- compute_survival_rmst(outcomes_df.long, weight_var = "comb", "combined")
+  results$combined_rmst0 <- comb_results$rmst0
+  results$combined_rmst1 <- comb_results$rmst1
+  results$combined_rmst_diff <- comb_results$rmst_diff
+  results$combined_surv_curve <- comb_results$surv_curve
+  
   return(results)
 }
 
@@ -457,6 +611,8 @@ cat("=== Starting m-of-n Bootstrap (WITHOUT replacement) ===\n")
 cat(sprintf("Bootstrap iterations: %d\n", B))
 cat(sprintf("Bootstrap sample size: m = %d\n", m))
 cat("Note: Sampling WITHOUT replacement - each subject appears at most once per iteration\n")
+cat(sprintf("RMST restriction time: tau = %d days\n", tau))
+cat(sprintf("Survival curve time grid: every 60 days up to %d days\n", tau))
 
 # Load original data ONCE (outside loop for efficiency)
 cat("Loading original data...\n")
@@ -492,6 +648,8 @@ if (m > n) {
 
 # Check for existing results to resume from
 results_file <- file.path(output_dir, "bootstrap_results_iterative.csv")
+rmst_file <- file.path(output_dir, "bootstrap_rmst_iterative.csv")
+survcurves_file <- file.path(output_dir, "bootstrap_survcurves_iterative.csv")
 checkpoint_file <- file.path(output_dir, "bootstrap_results_checkpoint.rds")
 completed_iters <- integer(0)
 
@@ -559,7 +717,7 @@ for (b in 1:B) {
                                      cohortMethodData_allcovar, m)
     bootstrap_results[[b]] <- results
     
-    # Save this iteration's result immediately
+    # Save this iteration's result immediately (coefficients only)
     res_row <- data.frame(
       iteration = results$bootstrap_iteration,
       unadjusted_coef = ifelse(is.null(results$unadjusted_coef) || is.na(results$unadjusted_coef), 
@@ -578,6 +736,74 @@ for (b in 1:B) {
     } else {
       write.table(res_row, results_file, row.names = FALSE,
                   col.names = FALSE, sep = ",", append = TRUE)
+    }
+    
+    # Save RMST results progressively to CSV
+    rmst_row <- data.frame(
+      iteration = b,
+      unadjusted_rmst0 = ifelse(is.null(results$unadjusted_rmst0) || is.na(results$unadjusted_rmst0), 
+                                NA, results$unadjusted_rmst0),
+      unadjusted_rmst1 = ifelse(is.null(results$unadjusted_rmst1) || is.na(results$unadjusted_rmst1), 
+                                NA, results$unadjusted_rmst1),
+      unadjusted_rmst_diff = ifelse(is.null(results$unadjusted_rmst_diff) || is.na(results$unadjusted_rmst_diff), 
+                                    NA, results$unadjusted_rmst_diff),
+      iptw_rmst0 = ifelse(is.null(results$iptw_rmst0) || is.na(results$iptw_rmst0), 
+                         NA, results$iptw_rmst0),
+      iptw_rmst1 = ifelse(is.null(results$iptw_rmst1) || is.na(results$iptw_rmst1), 
+                         NA, results$iptw_rmst1),
+      iptw_rmst_diff = ifelse(is.null(results$iptw_rmst_diff) || is.na(results$iptw_rmst_diff), 
+                             NA, results$iptw_rmst_diff),
+      ipcw_rmst0 = ifelse(is.null(results$ipcw_rmst0) || is.na(results$ipcw_rmst0), 
+                         NA, results$ipcw_rmst0),
+      ipcw_rmst1 = ifelse(is.null(results$ipcw_rmst1) || is.na(results$ipcw_rmst1), 
+                         NA, results$ipcw_rmst1),
+      ipcw_rmst_diff = ifelse(is.null(results$ipcw_rmst_diff) || is.na(results$ipcw_rmst_diff), 
+                             NA, results$ipcw_rmst_diff),
+      combined_rmst0 = ifelse(is.null(results$combined_rmst0) || is.na(results$combined_rmst0), 
+                             NA, results$combined_rmst0),
+      combined_rmst1 = ifelse(is.null(results$combined_rmst1) || is.na(results$combined_rmst1), 
+                             NA, results$combined_rmst1),
+      combined_rmst_diff = ifelse(is.null(results$combined_rmst_diff) || is.na(results$combined_rmst_diff), 
+                                 NA, results$combined_rmst_diff)
+    )
+    
+    # Append RMST to CSV file
+    if (!file.exists(rmst_file)) {
+      write.csv(rmst_row, rmst_file, row.names = FALSE)
+    } else {
+      write.table(rmst_row, rmst_file, row.names = FALSE,
+                  col.names = FALSE, sep = ",", append = TRUE)
+    }
+    
+    # Save survival curves progressively to CSV
+    # Each model's survival curve has multiple rows (one per time point)
+    models_surv <- c("unadjusted", "iptw", "ipcw", "combined")
+    
+    for (model in models_surv) {
+      # Map model names to result keys
+      model_key_map <- list(
+        "unadjusted" = "unadjusted_surv_curve",
+        "iptw" = "iptw_surv_curve",
+        "ipcw" = "ipcw_surv_curve",
+        "combined" = "combined_surv_curve"
+      )
+      model_key <- model_key_map[[model]]
+      
+      surv_curve <- results[[model_key]]
+      
+      if (!is.null(surv_curve) && is.data.frame(surv_curve) && nrow(surv_curve) > 0) {
+        surv_row <- surv_curve %>%
+          mutate(iteration = b, model = model) %>%
+          select(iteration, model, time, surv0, surv1)
+        
+        # Append survival curves to CSV file
+        if (!file.exists(survcurves_file)) {
+          write.csv(surv_row, survcurves_file, row.names = FALSE)
+        } else {
+          write.table(surv_row, survcurves_file, row.names = FALSE,
+                      col.names = FALSE, sep = ",", append = TRUE)
+        }
+      }
     }
     
     # Save checkpoint RDS every 10 iterations
@@ -601,7 +827,7 @@ for (b in 1:B) {
     
   }, error = function(e) {
     cat(sprintf("\nError in bootstrap iteration %d: %s\n", b, e$message))
-    # Save error as NA values
+    # Save error as NA values for coefficients
     res_row <- data.frame(
       iteration = b,
       unadjusted_coef = NA,
@@ -617,6 +843,41 @@ for (b in 1:B) {
                   col.names = FALSE, sep = ",", append = TRUE)
     }
     
+    # Save error as NA values for RMST
+    rmst_row <- data.frame(
+      iteration = b,
+      unadjusted_rmst0 = NA, unadjusted_rmst1 = NA, unadjusted_rmst_diff = NA,
+      iptw_rmst0 = NA, iptw_rmst1 = NA, iptw_rmst_diff = NA,
+      ipcw_rmst0 = NA, ipcw_rmst1 = NA, ipcw_rmst_diff = NA,
+      combined_rmst0 = NA, combined_rmst1 = NA, combined_rmst_diff = NA
+    )
+    
+    if (!file.exists(rmst_file)) {
+      write.csv(rmst_row, rmst_file, row.names = FALSE)
+    } else {
+      write.table(rmst_row, rmst_file, row.names = FALSE,
+                  col.names = FALSE, sep = ",", append = TRUE)
+    }
+    
+    # Save error as NA values for survival curves (one row per model per time point)
+    models_surv <- c("unadjusted", "iptw", "ipcw", "combined")
+    for (model in models_surv) {
+      surv_row <- data.frame(
+        iteration = b,
+        model = model,
+        time = time_grid,
+        surv0 = NA,
+        surv1 = NA
+      )
+      
+      if (!file.exists(survcurves_file)) {
+        write.csv(surv_row, survcurves_file, row.names = FALSE)
+      } else {
+        write.table(surv_row, survcurves_file, row.names = FALSE,
+                    col.names = FALSE, sep = ",", append = TRUE)
+      }
+    }
+    
     bootstrap_results[[b]] <- list(
       bootstrap_iteration = b,
       error = e$message
@@ -628,7 +889,7 @@ cat("\n=== Bootstrap Complete ===\n")
 cat(sprintf("Completed %d iterations\n", length(bootstrap_results)))
 
 ################################################################################
-# Calculate Bootstrap Statistics
+# Calculate Bootstrap Statistics for HR Coefficients
 # 
 # All bootstrap statistics are calculated on the log(HR) scale (coefficients).
 # This is the correct scale for bootstrap inference:
@@ -637,7 +898,7 @@ cat(sprintf("Completed %d iterations\n", length(bootstrap_results)))
 # - HR values are transformed back (exp) only for display/interpretation
 ################################################################################
 
-cat("\n=== Calculating Bootstrap Statistics ===\n")
+cat("\n=== Calculating Bootstrap Statistics for HR Coefficients ===\n")
 cat("Working on log(HR) scale (coefficients) for all bootstrap statistics\n")
 
 # Load results from saved file (progressive save) or use in-memory results
@@ -735,12 +996,116 @@ summary_df <- do.call(rbind, summary_stats)
 write.csv(summary_df, file.path(output_dir, "bootstrap_summary.csv"), row.names = FALSE)
 
 # Print summary
-cat("\n=== Bootstrap Summary ===\n")
+cat("\n=== Bootstrap Summary (HR Coefficients) ===\n")
 print(summary_df)
 
+################################################################################
+# Calculate Bootstrap Statistics for RMST
+################################################################################
+
+cat("\n=== Calculating Bootstrap Statistics for RMST ===\n")
+
+# Load RMST results from CSV
+if (file.exists(rmst_file)) {
+  rmst_df <- read.csv(rmst_file)
+  
+  # Calculate statistics for each model
+  rmst_summary <- list()
+  
+  models_rmst <- c("unadjusted", "iptw", "ipcw", "combined")
+  for (model in models_rmst) {
+    rmst0_col <- paste0(model, "_rmst0")
+    rmst1_col <- paste0(model, "_rmst1")
+    rmst_diff_col <- paste0(model, "_rmst_diff")
+    
+    if (all(c(rmst0_col, rmst1_col, rmst_diff_col) %in% names(rmst_df))) {
+      rmst0_vals <- rmst_df[[rmst0_col]][!is.na(rmst_df[[rmst0_col]])]
+      rmst1_vals <- rmst_df[[rmst1_col]][!is.na(rmst_df[[rmst1_col]])]
+      rmst_diff_vals <- rmst_df[[rmst_diff_col]][!is.na(rmst_df[[rmst_diff_col]])]
+      
+      if (length(rmst_diff_vals) > 0) {
+        rmst_summary[[model]] <- data.frame(
+          Model = model,
+          RMST0_mean = mean(rmst0_vals),
+          RMST0_se = sd(rmst0_vals),
+          RMST0_CI_lower = quantile(rmst0_vals, alpha/2, na.rm = TRUE),
+          RMST0_CI_upper = quantile(rmst0_vals, 1 - alpha/2, na.rm = TRUE),
+          RMST1_mean = mean(rmst1_vals),
+          RMST1_se = sd(rmst1_vals),
+          RMST1_CI_lower = quantile(rmst1_vals, alpha/2, na.rm = TRUE),
+          RMST1_CI_upper = quantile(rmst1_vals, 1 - alpha/2, na.rm = TRUE),
+          RMST_diff_mean = mean(rmst_diff_vals),
+          RMST_diff_se = sd(rmst_diff_vals),
+          RMST_diff_CI_lower = quantile(rmst_diff_vals, alpha/2, na.rm = TRUE),
+          RMST_diff_CI_upper = quantile(rmst_diff_vals, 1 - alpha/2, na.rm = TRUE),
+          n_valid = length(rmst_diff_vals)
+        )
+      }
+    }
+  }
+  
+  if (length(rmst_summary) > 0) {
+    rmst_summary_df <- do.call(rbind, rmst_summary)
+    write.csv(rmst_summary_df, file.path(output_dir, "bootstrap_rmst_summary.csv"), row.names = FALSE)
+    
+    cat("\n=== Bootstrap RMST Summary ===\n")
+    print(rmst_summary_df)
+  }
+} else {
+  cat("No RMST results file found.\n")
+}
+
+################################################################################
+# Calculate Bootstrap Statistics for Survival Curves
+################################################################################
+
+cat("\n=== Calculating Bootstrap Statistics for Survival Curves ===\n")
+
+# Load survival curves from CSV
+if (file.exists(survcurves_file)) {
+  survcurves_df <- read.csv(survcurves_file)
+  
+  # Aggregate survival curves across bootstrap iterations
+  # For each model and time point, compute mean and quantiles
+  surv_summaries <- survcurves_df %>%
+    group_by(model, time) %>%
+    summarise(
+      surv0_mean = mean(surv0, na.rm = TRUE),
+      surv0_CI_lower = quantile(surv0, alpha/2, na.rm = TRUE),
+      surv0_CI_upper = quantile(surv0, 1 - alpha/2, na.rm = TRUE),
+      surv1_mean = mean(surv1, na.rm = TRUE),
+      surv1_CI_lower = quantile(surv1, alpha/2, na.rm = TRUE),
+      surv1_CI_upper = quantile(surv1, 1 - alpha/2, na.rm = TRUE),
+      n_valid = sum(!is.na(surv0) & !is.na(surv1)),
+      .groups = "drop"
+    ) %>%
+    arrange(model, time)
+  
+  # Save summary
+  write.csv(surv_summaries, file.path(output_dir, "bootstrap_survival_curves_summary.csv"), row.names = FALSE)
+  
+  cat("\n=== Bootstrap Survival Curves Summary ===\n")
+  cat(sprintf("Survival curves computed at %d time points (every 60 days up to %d days)\n", 
+              length(time_grid), tau))
+  cat(sprintf("Summary saved with point estimates and %d%% confidence intervals\n", (1-alpha)*100))
+  cat(sprintf("Total rows in summary: %d (4 models × %d time points)\n", 
+              nrow(surv_summaries), length(time_grid)))
+} else {
+  cat("No survival curves results file found.\n")
+}
+
+################################################################################
+# Final Summary
+################################################################################
+
 cat(sprintf("\nResults saved to: %s/\n", output_dir))
-cat("- bootstrap_results_iterative.csv: Progressive save (updated after each iteration)\n")
+cat("- bootstrap_results_iterative.csv: Progressive save (coefficients, updated after each iteration)\n")
 cat("- bootstrap_results.csv: Final complete results (copy of iterative save)\n")
+cat("- bootstrap_rmst_iterative.csv: RMST results (progressive save, updated after each iteration)\n")
+cat("- bootstrap_rmst_summary.csv: RMST summary statistics (SEs and CIs)\n")
+cat("- bootstrap_survcurves_iterative.csv: Survival curves (progressive save, updated after each iteration)\n")
+cat("- bootstrap_survival_curves_summary.csv: Survival curves with bootstrap CIs\n")
 cat("- bootstrap_results_checkpoint.rds: Checkpoint file (saved every 10 iterations)\n")
-cat("- bootstrap_summary.csv: Summary statistics (SEs and CIs)\n")
+cat("- bootstrap_summary.csv: HR coefficient summary statistics (SEs and CIs)\n")
 cat("\nNote: If the script crashes, it will automatically resume from existing results.\n")
+cat("All results (coefficients, RMST, survival curves) are saved progressively after each iteration.\n")
