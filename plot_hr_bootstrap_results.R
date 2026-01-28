@@ -13,10 +13,10 @@ hr_df <- read.csv(hr_file)
 # Map model names to cleaner names matching Censoring_RWD_HR.R style
 # Define the desired order (top to bottom after coord_flip)
 desired_order <- c(
-  "CUMC Unadjusted",
-  "CUMC LSPS-IPTW",
+  "CUMC LSPS-IPTW and IPCW",
   "CUMC IPCW",
-  "CUMC LSPS-IPTW and IPCW"
+  "CUMC LSPS-IPTW",
+  "CUMC Unadjusted"
 )
 
 hr_plot_df <- hr_df %>%
@@ -36,14 +36,14 @@ hr_plot_df <- hr_df %>%
 
 # Optional: Add legend row (uncomment and adjust if needed)
 # Legend will appear at the very top if uncommented
-# legend_row <- data.frame(
-#   names = "LEGEND LSPS-Matching",
-#   hr = 0.84,  # Update with actual legend value if needed
-#   lower = 0.75,  # Update with actual legend CI if needed
-#   upper = 0.95   # Update with actual legend CI if needed
-# )
-# hr_plot_df <- rbind(legend_row, hr_plot_df)
-# desired_order <- c("LEGEND LSPS-Matching", desired_order)
+legend_row <- data.frame(
+  names = "LEGEND LSPS-Matching",
+  hr = 0.84,  # Update with actual legend value if needed
+  lower = 0.75,  # Update with actual legend CI if needed
+  upper = 0.95   # Update with actual legend CI if needed
+)
+hr_plot_df <- rbind(legend_row, hr_plot_df)
+desired_order <- c(desired_order, "LEGEND LSPS-Matching")
 
 # Set factor levels to desired order (top to bottom after coord_flip)
 hr_plot_df$names <- factor(hr_plot_df$names, levels = desired_order)
@@ -71,20 +71,26 @@ print(fp)
 
 # Save plots
 # FOR AMIA SUBMISSION
-ggsave("/Users/hc3292/Desktop/Research/AMIA 2025 Censoring submission/figures/HRplots.png", fp, 
-       width = 9,
-       height = 5,
-       dpi = 600)
-
-# FOR PAPER
-ggsave("/Users/hc3292/Desktop/Research/Censoring/HRplots.png", fp, 
+ggsave("results/HRplots.png", fp, 
        width = 14,
        height = 7,
        dpi = 600)
 
-ggsave("/Users/hc3292/Desktop/Research/Censoring/RWD_HRplots.pdf", fp, 
-       width = 10,
-       height = 6,
+ggsave("results/HRplots.pdf", comb.plot, 
+       width = 14, 
+       height = 7,
        dpi = 600)
+
+# 
+# # FOR PAPER
+# ggsave("results/HRplots.png", fp, 
+#        width = 14,
+#        height = 7,
+#        dpi = 600)
+# 
+# ggsave("results/HRplots.png", fp, 
+#        width = 10,
+#        height = 6,
+#        dpi = 600)
 
 cat("\nHR forest plot saved successfully!\n")

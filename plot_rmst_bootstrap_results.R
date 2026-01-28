@@ -73,20 +73,20 @@ print(fp)
 
 # Save plots
 # FOR AMIA SUBMISSION
-ggsave("/Users/hc3292/Desktop/Research/AMIA 2025 Censoring submission/figures/RMSTplots.png", fp, 
+ggsave("results/RMSTplots.png", fp, 
        width = 9,
        height = 5,
        dpi = 600)
 
-# FOR PAPER
-ggsave("/Users/hc3292/Desktop/Research/Censoring/RMSTplots.png", fp, 
-       width = 14,
-       height = 7,
-       dpi = 600)
-
-ggsave("/Users/hc3292/Desktop/Research/Censoring/RWD_RMSTplots.pdf", fp, 
-       width = 10,
-       height = 6,
-       dpi = 600)
+# # FOR PAPER
+# ggsave("results/RMSTplots.png", fp, 
+#        width = 14,
+#        height = 7,
+#        dpi = 600)
+# 
+# ggsave("results/RWD_RMSTplots.pdf", fp, 
+#        width = 10,
+#        height = 6,
+#        dpi = 600)
 
 cat("\nRMST forest plot saved successfully!\n")
