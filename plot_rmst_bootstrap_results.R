@@ -16,10 +16,10 @@ tau <- unique(rmst_df$tau)[1]
 # Map model names to cleaner names matching Censoring_RWD_HR.R style
 # Define the desired order (top to bottom after coord_flip)
 desired_order <- c(
-  "CUMC Unadjusted",
-  "CUMC LSPS-IPTW",
+  "CUMC LSPS-IPTW and IPCW",
   "CUMC IPCW",
-  "CUMC LSPS-IPTW and IPCW"
+  "CUMC LSPS-IPTW",
+  "CUMC Unadjusted"
 )
 
 rmst_plot_df <- rmst_df %>%
@@ -77,6 +77,12 @@ ggsave("results/RMSTplots.png", fp,
        width = 9,
        height = 5,
        dpi = 600)
+
+ggsave("results/RMSTplots.pdf", fp, 
+       width = 14,
+       height = 7,
+       dpi = 600)
+
 
 # # FOR PAPER
 # ggsave("results/RMSTplots.png", fp, 
