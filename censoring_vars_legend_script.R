@@ -24,7 +24,7 @@
 ### 1) load cohort method data
 
 # important: use the "all covar" version
-cohortMethodData <- CohortMethod::loadCohortMethodData("cohortMethodData_t1788868_c1788867_o1788866_allcovar.zip")
+cohortMethodData <- CohortMethod::loadCohortMethodData("results/cohortMethodData_t1788868_c1788867_o1788866_allcovar.zip")
 
 ### 2) build the censored_cohort table 
 
@@ -70,6 +70,10 @@ outcomes_for_cyclops <- cohorts %>%
   # Select only the required columns for the new table
   select(rowId, y, time)
 
+# filter for only those in Studypop
+outcomes_for_cyclops <- outcomes_for_cyclops %>%
+  semi_join(studyPop %>% distinct(rowId), by = "rowId", copy = TRUE)
+
 # Add the new table to the Andromeda object
 cohortMethodData$outcomes_for_cyclops <- outcomes_for_cyclops
 
@@ -86,8 +90,11 @@ lassoPrior <- Cyclops::createPrior(
   useCrossValidation = TRUE
 )
 
-Cox_censoring <- fitCyclopsModel(censored_df,
-                                 prior = lassoPrior)
+cat("\n running Cox censoring model")
 
-saveRDS(Cox_censoring, "Cox_censoring.rds")
+Cox_censoring <- fitCyclopsModel(censored_df,
+                                 prior = lassoPrior,
+                                 control = createControl(threads = MAX_THREADS))
+
+saveRDS(Cox_censoring, "results/Cox_censoring.rds")
 

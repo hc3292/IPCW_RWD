@@ -50,6 +50,7 @@ outcomes_df.long$comb = outcomes_df.long$Stab_ipcw_trunc * outcomes_df.long$iptw
 fit_unadjusted <- coxph(Surv(Tstart, time, ami) ~ treatment, data=outcomes_df.long, 
                         id=rowId)
 summary(fit_unadjusted) # coef = -0.73228  SE = 0.08192; HR = 2.07982
+# -0.58
 
 
 ### IPCW STABILIZED 
@@ -61,6 +62,7 @@ fit_ipcw_Stab_trunc <- coxph(Surv(Tstart, time, ami) ~ treatment , data=outcomes
                              id=rowId, weights = Stab_ipcw_trunc) # unstab exp(coef) = 0.51 (1/0.51 = 1.95)
 summary(fit_ipcw_Stab_trunc) # coef = -0.78541, SE = 0.09659; HR = 0.45593
 
+# -0.638, HR - 0.53
 
 # IPTW weights ====== CONFOUNDING
 
@@ -72,9 +74,11 @@ fit_iptw_trunc <- coxph(Surv(Tstart, time, ami) ~ treatment , data=outcomes_df.l
                         id=rowId, weights = iptw_trunc) 
 summary(fit_iptw_trunc) # coef = -0.2098; SE = 0.1022; HR = 0.8108
 
-
+# -0.15, HR = 0.85
 
 # combined
 fit_comb <- coxph(Surv(Tstart, time, ami) ~ treatment , data=outcomes_df.long, 
                   id=rowId, weights = comb) 
 summary(fit_comb) # coef = -0.08742 SE =  0.11319; exp: 0.91629
+
+# -0.16, 0.85

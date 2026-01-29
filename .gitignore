@@ -47,3 +47,14 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# results
+*_results/
+/results/
+result/
+results/
+*bootstrap*/
+
+# old
+/old/
+

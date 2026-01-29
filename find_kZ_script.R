@@ -11,13 +11,13 @@ library(progress)
 
 ### -- 0) Read in data
 
-ps = readRDS("ps_study.rds") # this reads in the propensity score results from find_ps_legend_script.R
+ps = readRDS("results/ps_study.rds") # this reads in the propensity score results from find_ps_legend_script.R
 
 # important: make sure you read in the cohort with all variables
-cohortMethodData <- CohortMethod::loadCohortMethodData("cohortMethodData_t1788868_c1788867_o1788866_allcovar.zip")
+cohortMethodData <- CohortMethod::loadCohortMethodData("results/cohortMethodData_t1788868_c1788867_o1788866_allcovar.zip")
 
 # from cox censoring model that was fit:
-Cox_censoring = readRDS("Cox_censoring.rds")
+Cox_censoring = readRDS("results/Cox_censoring.rds")
 
 ### -- 1) Restrict CohortMethodData to the PS analysis cohort --
 # make sure cohort method data contains individuals included in PS analysis 
@@ -211,10 +211,10 @@ dist = summary(outcomes_df$time) # max is 9647 days = 26.47 years; mean is 8 yea
 # one way to do cut times is space them out evenlly till the max
 cut.times = seq(from = 60, to = floor(max(outcomes_df$time) / 60) * 60, by = 60) 
 # another way is to do it more in the beginning then less till the end since dist of time is skewed
-cut.times = c(seq(from = 1, to = dist[2], by = 5),# go by 5 till the first quartile
-              seq(from = dist[2] + 5, to = dist[3], by = 10), # by 10 to the median
-              seq(from = dist[3] + 10, to = dist[5], by = 30), # by 30 to Q3
-              seq(from = dist[5] + 30, to = floor(max(outcomes_df$time) / 100) * 100, by = 100)) # by 100 rest of way
+# cut.times = c(seq(from = 1, to = dist[2], by = 5),# go by 5 till the first quartile
+#              seq(from = dist[2] + 5, to = dist[3], by = 10), # by 10 to the median
+#              seq(from = dist[3] + 10, to = dist[5], by = 30), # by 30 to Q3
+#              seq(from = dist[5] + 30, to = floor(max(outcomes_df$time) / 100) * 100, by = 100)) # by 100 rest of way
 
 # cut.times = unique(outcomes_df$time) # I have tried this, but it makes the long data REALLY long 
 # and doesn't really change the results
@@ -255,4 +255,4 @@ outcomes_df.long$Unstab_ipcw = 1/outcomes_df.long$KZ
 outcomes_df.long$Stab_ipcw = outcomes_df.long$K0_ti/outcomes_df.long$KZ
 
 # save
-write.csv(outcomes_df.long, "survival_weights_endObsDate.csv")
+write.csv(outcomes_df.long, "results/survival_weights_endObsDate.csv")
