@@ -24,15 +24,15 @@ library(CohortMethod)
 ################################################################################
 
 connectionDetails <- createConnectionDetails(dbms="sql server",
-                                             server="dbmi-omop.mc.cumc.columbia.edu")
+                                             server="")
 
 conn <- DatabaseConnector::connect(connectionDetails)
 
-cdmDatabaseSchema <- "ohdsi_cumc_2025q2r1_deid.dbo" 
+cdmDatabaseSchema <- "" 
 targetCohortTable <- "legend_results"
-targetDatabaseSchema <- "ohdsi_cumc_2025q2r1_deid.results"
+targetDatabaseSchema <- ""
 tempEmulationSchema <- ""
-vocabularyDatabaseSchema <- "ohdsi_cumc_2025q2r1_deid.dbo" 
+vocabularyDatabaseSchema <- "" 
 cdmSourceName <- "CUMC" 
 cdmVersion <- "" 
 
