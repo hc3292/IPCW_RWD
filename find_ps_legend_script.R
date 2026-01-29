@@ -24,23 +24,24 @@ studyPop <- CohortMethod::createStudyPopulation(
   cohortMethodData = cohortMethodData, 
   outcomeId = 1788866, # AMI
   firstExposureOnly = TRUE,
-  washoutPeriod = 0,
+  washoutPeriod = 365,
   removeDuplicateSubjects = "keep first",
-  censorAtNewRiskWindow = TRUE,
+  censorAtNewRiskWindow = FALSE,
   removeSubjectsWithPriorOutcome = TRUE,
   priorOutcomeLookback = 99999,
-  minDaysAtRisk = 1,
-  maxDaysAtRisk = 99999,
-  riskWindowStart = 0,
+  riskWindowStart = 1,
   startAnchor = "cohort start",
-  riskWindowEnd = 99999,
-  endAnchor = "cohort end"
+  riskWindowEnd = 9999,
+  endAnchor = "cohort end",
+  minDaysAtRisk = 1
 )
 
 getAttritionTable(studyPop)
 
 # create propensity model
-ps <- createPs(cohortMethodData = cohortMethodData, population = studyPop)
+ps <- createPs(cohortMethodData = cohortMethodData, 
+               population = studyPop,
+               control = createControl(threads = MAX_THREADS))
 saveRDS(ps, "results/ps_study.rds")
 
 # outcome model

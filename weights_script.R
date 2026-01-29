@@ -10,16 +10,16 @@ library("survival")
 # summary(outcomes_df.long$Stab_ipcw)
 
 # Truncate stabilized IPCW weights
-lo <- quantile(outcomes_df.long$Stab_ipcw, 0.005, na.rm = TRUE)
-hi <- quantile(outcomes_df.long$Stab_ipcw, 0.995, na.rm = TRUE)
+lo <- quantile(outcomes_df.long$Stab_ipcw, 0.01, na.rm = TRUE)
+hi <- quantile(outcomes_df.long$Stab_ipcw, 0.99, na.rm = TRUE)
 
 outcomes_df.long$Stab_ipcw_trunc <- 
   pmin(pmax(outcomes_df.long$Stab_ipcw, lo), hi)
 
 
 # truncate unstabilized IPCW weights
-lo <- quantile(outcomes_df.long$Unstab_ipcw, 0.005, na.rm = TRUE)
-hi <- quantile(outcomes_df.long$Unstab_ipcw, 0.995, na.rm = TRUE)
+lo <- quantile(outcomes_df.long$Unstab_ipcw, 0.01, na.rm = TRUE)
+hi <- quantile(outcomes_df.long$Unstab_ipcw, 0.99, na.rm = TRUE)
 
 outcomes_df.long$Unstab_ipcw_trunc <- 
   pmin(pmax(outcomes_df.long$Unstab_ipcw, lo), hi)
@@ -29,8 +29,8 @@ outcomes_df.long$Unstab_ipcw_trunc <-
 outcomes_df.long <- outcomes_df.long %>%
   group_by(Tstart) %>%
   mutate(
-    lower_iptw = quantile(iptw, 0.005, na.rm = TRUE),
-    upper_iptw = quantile(iptw, 0.995, na.rm = TRUE),
+    lower_iptw = quantile(iptw, 0.01, na.rm = TRUE),
+    upper_iptw = quantile(iptw, 0.99, na.rm = TRUE),
     iptw_trunc = pmin(pmax(iptw, lower_iptw), upper_iptw)
   ) %>%
   ungroup()

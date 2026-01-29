@@ -134,10 +134,10 @@ surv_summary <- surv_summary %>%
 
 # Theme matching the original plot style
 big_axis <- theme(
-  axis.title = element_text(size = 40),
-  axis.text  = element_text(size = 28),
-  legend.title = element_text(size = 28),
-  legend.text  = element_text(size = 28)
+  axis.title = element_text(size = 34),
+  axis.text  = element_text(size = 22),
+  legend.title = element_text(size = 22),
+  legend.text  = element_text(size = 22)
 )
 
 # Function to create survival curve plot with bootstrap CIs

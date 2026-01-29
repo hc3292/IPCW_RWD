@@ -76,7 +76,7 @@ ggsave("results/HRplots.png", fp,
        height = 7,
        dpi = 600)
 
-ggsave("results/HRplots.pdf", comb.plot, 
+ggsave("results/HRplots.pdf", fp, 
        width = 14, 
        height = 7,
        dpi = 600)
